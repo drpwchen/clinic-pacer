@@ -163,7 +163,8 @@
     for (const e of sess.events) {
       if (e.type === 'idle') { idle = true; continue; }
       if (e.type !== 'done') continue;
-      if (ref != null && !idle) out.push((e.t - ref) / MIN);
+      // e.t > ref：沒按開診時第一次看完會自動開診（openAt＝那一刻），不能多算一段 0 分
+      if (ref != null && !idle && e.t > ref) out.push((e.t - ref) / MIN);
       ref = e.t; idle = false;
     }
     return out;

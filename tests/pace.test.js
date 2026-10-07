@@ -72,6 +72,13 @@ test('沒按開診：從第一次看完開始算間隔', () => {
   assert.deepEqual([...C.intervals(s)], [8]);
 });
 
+test('自動開診（UI 存的狀態：openAt＝第一次看完）不會多一段 0 分間隔', () => {
+  const t1 = at(14, 10);
+  const s = { N: 25, openAt: t1, closedAt: null, events: [done(t1), done(at(14, 17))] };
+  assert.deepEqual([...C.intervals(s)], [7]);
+  assert.equal(C.pace(s, 8), 0.2 * 7 + 0.8 * 8);
+});
+
 test('前 5 位以前：速度用 prior 補（w = 有效間隔數 / 5）', () => {
   const s = { N: 25, openAt: at(14, 0), closedAt: null, events: [done(at(14, 4)), done(at(14, 8))] };  // 兩個 4 分
   assert.equal(C.pace(s, 8), 0.4 * 4 + 0.6 * 8);

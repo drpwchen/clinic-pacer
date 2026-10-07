@@ -102,6 +102,21 @@ def flow(browser):
     ctx.close()
 
 
+def no_open_flow(browser):
+    """不按開診、直接按看完：第一次看完自動開診，不能多算一段 0 分間隔（verifier 抓到的 bug）。"""
+    ctx = browser.new_context(viewport={"width": 900, "height": 900})
+    page = ctx.new_page()
+    page.clock.install(time=at(14, 10))
+    page.goto(URL)
+    page.keyboard.press(" ")
+    page.clock.fast_forward("07:00")
+    page.keyboard.press(" ")
+    iv = page.evaluate("""() => { const d = JSON.parse(localStorage.getItem('clinicpace.v1.day'));
+        return PaceCore.intervals(d.sessions[d.current]); }""")
+    check([round(x, 2) for x in iv] == [7], f"沒按開診：UI 存的狀態間隔＝{iv}（應為 [7]）")
+    ctx.close()
+
+
 def seeded(browser, now, sess, out_png, label, pip_png=None, screen_png=None):
     ctx = browser.new_context(no_viewport=True)
     page = ctx.new_page()
@@ -156,6 +171,7 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(channel=a.channel, headless=False)
         flow(browser)
+        no_open_flow(browser)
         normal = seeded(browser, at(15, 30), sess(10, at(15, 30), 7), out / "01-normal.png", "正常 15:30",
                         pip_png=out / "03-pip-window.png", screen_png=out / "04-pip-on-screen.png")
         behind = seeded(browser, at(16, 0), sess(12, at(16, 0), 8), out / "02-behind-warn.png", "落後 16:00",
