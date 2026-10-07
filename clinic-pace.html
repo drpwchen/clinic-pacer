@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看診進度</title>
+<!--
+  clinic-pace：門診看診進度 on pace 置頂小視窗。單一檔案、純本機、不連網路。
+  只記「按鍵時間」與「人數」，不存任何病人資料。
+  算法：vikunja-todo dispatch runs/r1007-39/report.md §1。
+-->
+<style id="pace-style">
+  :root {
+    --bg: #14213d; --fg: #ffffff; --dim: #b8c2d9; --line: #33476e;
+    --btn: #22345c; --btn-fg: #ffffff; --accent: #4da3ff; --warn: #ff9f1c;
+    font-family: "Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans TC", "PingFang TC", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); }
+  body.main { display: flex; flex-direction: column; align-items: center; padding: 16px; gap: 16px; overflow: auto; }
+  button { font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--btn); color: var(--btn-fg); border-radius: 8px; }
+  button:active { transform: translateY(1px); }
+
+  /* ---------- 小視窗（PiP 裡也是這一塊） ---------- */
+  .w { width: 100%; height: 100%; display: flex; flex-direction: column; padding: 6px 8px; gap: clamp(2px, 1.4cqh, 8px);
+       background: var(--bg); color: var(--fg); user-select: none; container-type: size; overflow: hidden; }
+  .w > * { flex-shrink: 0; }
+  body.main .w { width: 340px; height: 265px; border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.45); }
+  .w-top { display: flex; justify-content: space-between; align-items: baseline; font-size: clamp(12px, min(6.5cqw, 8.5cqh), 30px); }
+  .w-count b { font-size: 1.25em; }
+  .w-clock { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .w-slack { text-align: center; font-weight: 800; line-height: 1; font-size: clamp(24px, min(16cqw, 19cqh), 140px);
+             font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+  .w-slack small { font-size: .4em; font-weight: 600; }
+  .w-budget { text-align: center; font-size: clamp(12px, min(6cqw, 8cqh), 32px); }
+  .w-budget b { font-size: 1.3em; font-variant-numeric: tabular-nums; }
+  .w-train { text-align: center; color: var(--dim); font-size: clamp(11px, min(4.8cqw, 6.5cqh), 22px); }
+  .w-train.alert { color: var(--bg); background: var(--warn); border-radius: 6px; font-weight: 700; animation: blink 1s steps(2) infinite; }
+  .w-bars { display: grid; grid-template-columns: 2.2em 1fr; gap: 2px 6px; align-items: center; font-size: clamp(9px, min(3.6cqw, 4.8cqh), 15px); color: var(--dim); line-height: 1; }
+  .bar { height: clamp(4px, 2.4cqh, 10px); background: var(--line); border-radius: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .bar.time i { background: var(--dim); }
+  .w-warn { display: none; text-align: center; font-weight: 700; padding: 0 4px; border-radius: 6px;
+            background: var(--warn); color: #000; font-size: clamp(11px, min(4.8cqw, 6.5cqh), 22px); }
+  .w-warn.on { display: block; }
+  .w-warn.on ~ .w-train:not(.alert) { display: none; }
+  .w-badge { display: none; padding: 0 6px; border: 1px dashed var(--fg); border-radius: 6px; font-weight: 700; }
+  .w-badge.on { display: inline; }
+  .w-site:has(~ .w-badge.on) { display: none; }
+  .w-btns { margin-top: auto; flex-shrink: 0; display: grid; grid-template-columns: 3fr 1fr 1fr 1fr 1fr; gap: 4px; }
+  .w-btns button { padding: 0; height: clamp(24px, 13cqh, 64px); font-size: clamp(11px, min(5cqw, 7cqh), 24px); }
+  .w-btns .done { font-weight: 800; background: var(--accent); color: #000; border-color: var(--accent); font-size: clamp(13px, min(6.5cqw, 8.5cqh), 32px); }
+  .w-btns2 { display: flex; gap: 4px; flex-shrink: 0; }
+  .w-btns2 button { flex: 1; }
+  .w-btns2 button { font-size: clamp(10px, min(4cqw, 5.2cqh), 18px); padding: 0; height: clamp(18px, 8cqh, 40px); }
+  .w-toast { position: fixed; left: 50%; top: 6px; transform: translateX(-50%); background: #000; color: #fff; padding: 2px 10px;
+             border-radius: 6px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .w-toast.on { opacity: .9; }
+  @keyframes blink { 50% { opacity: .55; } }
+
+  /* 落後：整個視窗反白（白底黑字）。靠亮度與形狀分辨，不靠紅綠 */
+  .w.behind { --bg: #ffffff; --fg: #000000; --dim: #333333; --line: #bbbbbb; --btn: #eeeeee; --btn-fg: #000000; --accent: #1f5fbf; }
+  .w.behind .w-btns .done { color: #fff; }
+  .w.closed .w-slack { font-size: clamp(20px, 10cqw, 60px); }
+
+  /* ---------- 主頁 ---------- */
+  .panel { width: min(720px, 100%); background: #1b2a4a; border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; }
+  .panel h2 { margin: 0 0 8px; font-size: 18px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .big { font-size: 18px; padding: 8px 16px; background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
+  .note { color: var(--dim); font-size: 14px; line-height: 1.6; }
+  table.sites { border-collapse: collapse; width: 100%; font-size: 14px; }
+  table.sites th, table.sites td { border-bottom: 1px solid var(--line); padding: 4px; text-align: left; }
+  table.sites input { width: 100%; font: inherit; background: #0f1a30; color: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
+  table.sites input.n { width: 4.5em; }
+  kbd { border: 1px solid var(--dim); border-radius: 4px; padding: 0 4px; font-size: 13px; }
+  .pip-host-note { display: none; color: var(--dim); }
+  body.pip-open .pip-host-note { display: block; }
+</style>
+</head>
+<body class="main">
+
+<div id="host">
+  <div class="w" id="w">
+    <div class="w-top"><span class="w-count"><b data-k="n">0</b> / <span data-k="N">0</span> 位</span><span class="w-site" data-k="site"></span><span class="w-badge" data-k="idle" title="這段不算進速度">空檔中</span><span class="w-clock" data-k="clock">--:--</span></div>
+    <div class="w-slack" data-k="slack">—</div>
+    <div class="w-budget" data-k="budget"></div>
+    <div class="w-warn" data-k="warn"></div>
+    <div class="w-train" data-k="train"></div>
+    <div class="w-bars">
+      <span>時間</span><div class="bar time"><i data-k="tbar"></i></div>
+      <span>人數</span><div class="bar"><i data-k="nbar"></i></div>
+    </div>
+    <div class="w-btns">
+      <button class="done" data-act="done" tabindex="-1" title="看完一位（空白鍵／Enter）">✓ 看完</button>
+      <button data-act="undo" tabindex="-1" title="撤銷上一下（Backspace／Z）">↶</button>
+      <button data-act="idle" tabindex="-1" title="空檔：目前沒人候診（I）">空</button>
+      <button data-act="nminus" tabindex="-1" title="總人數 −1（-）">−</button>
+      <button data-act="nplus" tabindex="-1" title="總人數 +1（+）">＋</button>
+    </div>
+    <div class="w-btns2">
+      <button data-act="openclose" tabindex="-1" data-k="openclose">開診</button>
+      <button data-act="site" tabindex="-1" title="切換站點">站點 ⇄</button>
+      <button data-act="pip" tabindex="-1" data-k="pipbtn">置頂 ⧉</button>
+    </div>
+    <div class="w-toast" data-k="toast"></div>
+  </div>
+</div>
+<p class="pip-host-note">小視窗已浮在最上面。這一頁不要關（可以縮小）；關掉小視窗後會回到這裡。</p>
+
+<div class="panel">
+  <h2>怎麼用</h2>
+  <div class="row"><button class="big" data-act="pip">開啟置頂小視窗</button></div>
+  <p class="note">
+    看完一位按 <b>✓ 看完</b>（小視窗在前面時也可按 <kbd>空白鍵</kbd> 或 <kbd>Enter</kbd>）。按錯按 <b>↶</b>（<kbd>Backspace</kbd>）。<br>
+    病人還沒到、沒人候診就按 <b>空</b>（<kbd>I</kbd>）：從這一下到下一次「看完」的時間不算進速度。<br>
+    總人數用 <b>−／＋</b> 調（<kbd>-</kbd>／<kbd>+</kbd>），最後報到截止後照實際人數修正一次。<br>
+    大字：<b>▲ +9</b>＝照目前速度會比離開時間早 9 分；<b>● </b>＝差不多；<b>▼ −19</b>＝會晚 19 分（整個視窗反白）。<br>
+    「每位 x 分」＝剩下的病人平均每位還能用幾分鐘。資料只存在這台電腦的瀏覽器裡，關掉重開會接著算；隔天自動歸檔。
+  </p>
+</div>
+
+<div class="panel">
+  <h2>站點設定（改完自動存）</h2>
+  <table class="sites" id="sites"></table>
+  <p class="note">離開診間＝車次時間 − 交通 − 進站。叫車提示在離開前「叫車提前」分鐘亮起（0＝不提示）。備選車次格式：<code>445 18:35, 447 20:00</code>。
+    速度預設＝還沒累積到 5 位時拿來補的每位分鐘數。</p>
+  <div class="row"><button data-act="resetSites">恢復預設站點</button><button data-act="export">匯出紀錄（JSON）</button><button data-act="clearToday">清掉今天這個站點</button></div>
+  <p class="note" data-k="hist"></p>
+</div>
+
+<script id="pace-core">
+/* ===== 算法（無 DOM，可在 node 測試）===== */
+(function (root) {
+  const MIN = 60000;
+  const WINDOW = 5;        // 只看最近 5 個間隔
+  const ALPHA = 0.4;       // EWMA 一般權重
+  const OUTLIER_X = 3;     // 單一間隔 > 3×prior 算極端值
+  const OUTLIER_W = 0.3;   // 極端值權重上限
+  const WARN_SLACK = -10;  // slack < −10 分 → 改票預警
+  const WARN_BEFORE = 60;  // 只在開車前 60 分以前預警（之後來不及改）
+  const BAND = 5;          // ▲ ≥ +5、▼ ≤ −5、中間 ●
+
+  function hm(s) {         // "17:46" → 1066（從午夜起算的分鐘）
+    const m = /^\s*(\d{1,2})[:：](\d{2})\s*$/.exec(String(s || ''));
+    return m ? (+m[1]) * 60 + (+m[2]) : NaN;
+  }
+  function atDay(nowMs, minutes) {  // 當天（本機時區）某分鐘的 ms
+    const d = new Date(nowMs); d.setHours(0, 0, 0, 0);
+    return d.getTime() + minutes * MIN;
+  }
+  function parseAlts(s) {  // "445 18:35, 447 20:00" → [{label:'445', min:1115}, …]（依時間排序）
+    return String(s || '').split(/[,，、;；\n]+/).map(t => t.trim()).filter(Boolean).map(t => {
+      const m = /^(.*?)\s*(\d{1,2}[:：]\d{2})$/.exec(t);
+      return m ? { label: m[1].trim() || m[2], min: hm(m[2]) } : null;
+    }).filter(a => a && !isNaN(a.min)).sort((a, b) => a.min - b.min);
+  }
+
+  // 有效間隔（分鐘）：兩次「看完」的時間差；中間按過「空檔」的那一段不算。
+  // 開診時間當第一段的起點；沒按開診就從第一次看完開始算。
+  function intervals(sess) {
+    const out = []; let ref = sess.openAt != null ? sess.openAt : null; let idle = false;
+    for (const e of sess.events) {
+      if (e.type === 'idle') { idle = true; continue; }
+      if (e.type !== 'done') continue;
+      // e.t > ref：沒按開診時第一次看完會自動開診（openAt＝那一刻），不能多算一段 0 分
+      if (ref != null && !idle && e.t > ref) out.push((e.t - ref) / MIN);
+      ref = e.t; idle = false;
+    }
+    return out;
+  }
+
+  function ewma(xs, prior) {
+    const last = xs.slice(-WINDOW); let e = null;
+    for (const x of last) {
+      const out = x > OUTLIER_X * prior;
+      if (e == null) e = out ? (1 - OUTLIER_W) * prior + OUTLIER_W * x : x;
+      else { const a = out ? Math.min(ALPHA, OUTLIER_W) : ALPHA; e = a * x + (1 - a) * e; }
+    }
+    return e;
+  }
+
+  function pace(sess, prior) {
+    const xs = intervals(sess);
+    if (!xs.length) return prior;
+    const w = Math.min(1, xs.length / WINDOW);
+    return w * ewma(xs, prior) + (1 - w) * prior;
+  }
+
+  function compute(site, sess, nowMs) {
+    const prior = +site.prior || 8;
+    const n = sess.events.filter(e => e.type === 'done').length;
+    const N = Math.max(sess.N, n);
+    const R = N - n;
+    const train = atDay(nowMs, hm(site.train));
+    const deadline = train - ((+site.travel || 0) + (+site.buffer || 0)) * MIN;
+    const callTaxi = (+site.taxiLead > 0) ? deadline - (+site.taxiLead) * MIN : null;
+    const start = sess.openAt != null ? sess.openAt : atDay(nowMs, hm(site.start));
+    const p = pace(sess, prior);
+    const avail = (deadline - nowMs) / MIN;
+    const finishEst = nowMs + R * p * MIN;
+    const slack = (deadline - finishEst) / MIN;
+    const budget = R > 0 ? avail / R : null;
+    const last = sess.events[sess.events.length - 1];
+    const idle = !!(last && last.type === 'idle');
+
+    let level = 'on';
+    if (slack >= BAND) level = 'ahead'; else if (slack <= -BAND) level = 'behind';
+
+    let warn = null;
+    if (R > 0 && slack < WARN_SLACK && nowMs < train - WARN_BEFORE * MIN) {
+      const lead = ((+site.travel || 0) + (+site.buffer || 0)) * MIN;
+      const alts = parseAlts(site.alts).filter(a => atDay(nowMs, a.min) > train);
+      const ok = alts.find(a => atDay(nowMs, a.min) - lead >= finishEst);
+      warn = { train: site.trainLabel, alt: ok || null, none: alts.length > 0 && !ok, last: alts[alts.length - 1] || null };
+    }
+
+    let taxi = null;  // 'call'＝該叫車、'go'＝該走了
+    if (sess.closedAt == null) {
+      if (nowMs >= deadline) taxi = 'go';
+      else if (callTaxi != null && nowMs >= callTaxi) taxi = 'call';
+    }
+
+    const span = deadline - start;
+    return {
+      n, N, R, prior, pace: p, avail, budget, finishEst, slack, level, warn, taxi, idle,
+      deadline, callTaxi, train, start,
+      timeFrac: span > 0 ? Math.min(1, Math.max(0, (nowMs - start) / span)) : 0,
+      countFrac: N > 0 ? n / N : 0,
+      validIntervals: intervals(sess).length,
+    };
+  }
+
+  // 顯示用字串（測試也驗這個，避免數字對了字錯了）
+  const MINUS = '−';
+  function fmtSlack(slack) {
+    const v = Math.round(slack);
+    const sym = v >= BAND ? '▲' : v <= -BAND ? '▼' : '●';
+    const sign = v > 0 ? '+' : v < 0 ? MINUS : '±';
+    return sym + ' ' + sign + Math.abs(v);
+  }
+  function fmtBudget(b) { return b == null ? '—' : (Math.round(b * 10) / 10).toFixed(1); }
+  function fmtHM(ms) { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+  function warnText(w) {
+    if (!w) return '';
+    if (w.alt) return `照速度趕不上 ${w.train} → 現在改 ${w.alt.label}（${String(Math.floor(w.alt.min / 60)).padStart(2, '0')}:${String(w.alt.min % 60).padStart(2, '0')}）`;
+    if (w.none) return `照速度連 ${w.last.label} 都趕不上 → 現在想備案`;
+    return `照速度趕不上 ${w.train} → 現在改票或想備案`;
+  }
+
+  root.PaceCore = { hm, atDay, parseAlts, intervals, ewma, pace, compute, fmtSlack, fmtBudget, fmtHM, warnText, MIN };
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+</script>
+
+<script id="pace-ui">
+(function () {
+  const C = window.PaceCore;
+  const LS = { sites: 'clinicpace.v1.sites', day: 'clinicpace.v1.day', hist: 'clinicpace.v1.history' };
+  // 預設站點：時刻來自復健科日曆（2026-10-07 查）。交通分鐘數玉里／關山是估計值，請實測後改。
+  const DEFAULT_SITES = [
+    { id: 'tch',  name: '東基', weekday: 3, start: '14:00', trainLabel: '441', train: '17:46', travel: 15, buffer: 6, taxiLead: 5, N: 25, prior: 8, alts: '445 18:35, 447 20:00' },
+    { id: 'yuli', name: '玉里', weekday: 1, start: '13:00', trainLabel: '441', train: '18:29', travel: 5,  buffer: 6, taxiLead: 5, N: 30, prior: 8, alts: '445 19:29, 447 20:53' },
+    { id: 'gs',   name: '關山', weekday: 3, start: '08:30', trainLabel: '472', train: '12:42', travel: 5,  buffer: 6, taxiLead: 5, N: 23, prior: 8, alts: '' },
+  ];
+  const FIELDS = [
+    ['name', '站點', 'text'], ['start', '開診', 'text'], ['trainLabel', '車次', 'text'], ['train', '開車', 'text'],
+    ['travel', '交通(分)', 'n'], ['buffer', '進站(分)', 'n'], ['taxiLead', '叫車提前', 'n'], ['N', '預設人數', 'n'],
+    ['prior', '速度預設', 'n'], ['alts', '備選車次', 'text'], ['weekday', '星期(0日)', 'n'],
+  ];
+  const DEBOUNCE_MS = 2000;  // 2 秒內連按兩下「看完」只算一次（防手滑雙擊）
+
+  function load(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } }
+  function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { toast('瀏覽器不讓存檔：重開會遺失'); } }
+  function today(ms) { const d = new Date(ms); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+
+  let sites = load(LS.sites, null) || JSON.parse(JSON.stringify(DEFAULT_SITES));
+  let day = null;
+
+  function siteById(id) { return sites.find(s => s.id === id) || sites[0]; }
+  function guessSite(now) {
+    const d = new Date(now), wd = d.getDay(), m = d.getHours() * 60 + d.getMinutes();
+    const hit = sites.find(s => +s.weekday === wd && m >= C.hm(s.start) - 90 && m <= C.hm(s.train));
+    return (hit || sites.find(s => +s.weekday === wd) || sites[0]).id;
+  }
+  function loadDay() {
+    const now = Date.now();
+    let d = load(LS.day, null);
+    if (d && d.date !== today(now)) {  // 換日：有紀錄就歸檔，然後清空
+      const hist = load(LS.hist, []);
+      for (const [sid, s] of Object.entries(d.sessions || {})) {
+        if (s.events && s.events.length) hist.push({ date: d.date, site: sid, N: s.N, openAt: s.openAt, closedAt: s.closedAt, events: s.events });
+      }
+      save(LS.hist, hist.slice(-200));
+      d = null;
+    }
+    if (!d) d = { date: today(now), current: guessSite(now), sessions: {} };
+    day = d; sess(); save(LS.day, day);
+  }
+  function sess() {
+    const s = day.sessions[day.current];
+    if (s) return s;
+    return (day.sessions[day.current] = { N: +siteById(day.current).N || 25, openAt: null, closedAt: null, events: [] });
+  }
+  function commit() { save(LS.day, day); render(); }
+
+  // ---------- 動作 ----------
+  let lastDone = 0;
+  const act = {
+    done() {
+      const s = sess(), now = Date.now();
+      if (s.closedAt != null) return toast('已關診（按「重開」可繼續）');
+      if (now - lastDone < DEBOUNCE_MS) return toast('連按太快，只算一次');
+      lastDone = now;
+      if (s.openAt == null) s.openAt = now;
+      s.events.push({ t: now, type: 'done' });
+      commit(); toast('看完 ' + s.events.filter(e => e.type === 'done').length + ' 位');
+    },
+    undo() {
+      const s = sess();
+      if (s.closedAt != null) { s.closedAt = null; commit(); return toast('已撤銷關診'); }
+      const e = s.events.pop();
+      if (!e) return toast('沒有可以撤銷的');
+      lastDone = 0; commit(); toast(e.type === 'idle' ? '已撤銷空檔' : '已撤銷一位');
+    },
+    idle() {
+      const s = sess(), last = s.events[s.events.length - 1];
+      if (s.closedAt != null) return;
+      if (last && last.type === 'idle') { s.events.pop(); commit(); return toast('取消空檔'); }
+      if (s.openAt == null) s.openAt = Date.now();
+      s.events.push({ t: Date.now(), type: 'idle' }); commit();
+    },
+    nplus() { const s = sess(); s.N++; commit(); toast('總人數 ' + s.N); },
+    nminus() {
+      const s = sess(), n = s.events.filter(e => e.type === 'done').length;
+      if (s.N <= n) return toast('總人數不能少於已看人數');
+      s.N--; commit(); toast('總人數 ' + s.N);
+    },
+    openclose() {
+      const s = sess();
+      if (s.openAt == null) { s.openAt = Date.now(); commit(); return toast('開診 ' + C.fmtHM(s.openAt)); }
+      if (s.closedAt == null) { s.closedAt = Date.now(); commit(); return toast('關診 ' + C.fmtHM(s.closedAt)); }
+      s.closedAt = null; commit(); toast('重開');
+    },
+    site() {
+      const i = sites.findIndex(x => x.id === day.current);
+      day.current = sites[(i + 1) % sites.length].id; sess(); commit(); toast('站點：' + siteById(day.current).name);
+    },
+    pip() { openPip(); },
+    resetSites() { sites = JSON.parse(JSON.stringify(DEFAULT_SITES)); save(LS.sites, sites); buildSites(); render(); },
+    export() {
+      const blob = new Blob([JSON.stringify({ today: day, history: load(LS.hist, []), sites }, null, 1)], { type: 'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'clinic-pace-' + day.date + '.json'; a.click();
+    },
+    clearToday() {
+      if (!confirm('清掉今天「' + siteById(day.current).name + '」的所有按鍵紀錄？')) return;
+      delete day.sessions[day.current]; sess(); commit();
+    },
+  };
+
+  // ---------- 畫面 ----------
+  const W = document.getElementById('w');
+  const $ = k => W.querySelector('[data-k="' + k + '"]');
+  let toastTimer = null;
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('on');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 1600);
+  }
+
+  function render() {
+    if (!day) return;
+    const now = Date.now();
+    if (day.date !== today(now)) { loadDay(); }
+    const site = siteById(day.current), s = sess();
+    const r = C.compute(site, s, now);
+    $('n').textContent = r.n; $('N').textContent = r.N;
+    $('site').textContent = site.name;
+    $('clock').textContent = C.fmtHM(now);
+    $('openclose').textContent = s.openAt == null ? '開診' : s.closedAt == null ? '關診' : '重開';
+    $('pipbtn').style.display = pipWin ? 'none' : '';
+    const train = $('train');
+    W.classList.remove('behind', 'closed');
+
+    if (s.closedAt != null) {
+      W.classList.add('closed');
+      const xs = C.intervals(s), avg = xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+      const early = Math.round((r.deadline - s.closedAt) / C.MIN);
+      $('slack').innerHTML = '收工 ' + C.fmtHM(s.closedAt);
+      $('budget').innerHTML = '看了 <b>' + r.n + '</b> 位' + (avg ? '，平均 <b>' + C.fmtBudget(avg) + '</b> 分' : '');
+      train.textContent = (early >= 0 ? '比離開時間早 ' + early + ' 分' : '比離開時間晚 ' + (-early) + ' 分') + ' · ' + site.trainLabel + ' ' + site.train;
+      train.classList.remove('alert');
+      $('warn').classList.remove('on'); $('idle').classList.remove('on');
+    } else if (s.openAt == null && r.n === 0) {
+      $('slack').innerHTML = '<small>' + site.name + ' ' + site.start + ' 開診</small>';
+      $('budget').innerHTML = '每位 <b>' + C.fmtBudget(r.budget) + '</b> 分';
+      train.textContent = site.trainLabel + ' ' + site.train + ' · ' + C.fmtHM(r.deadline) + ' 要離開';
+      train.classList.remove('alert');
+      $('warn').classList.remove('on'); $('idle').classList.remove('on');
+    } else if (r.R === 0) {
+      $('slack').innerHTML = '全部看完';
+      $('budget').innerHTML = '可以按「關診」';
+      train.textContent = site.trainLabel + ' ' + site.train + ' · ' + C.fmtHM(r.deadline) + ' 要離開';
+      train.classList.remove('alert');
+      $('warn').classList.remove('on'); $('idle').classList.toggle('on', false);
+    } else {
+      if (r.level === 'behind') W.classList.add('behind');
+      $('slack').innerHTML = C.fmtSlack(r.slack) + '<small> 分</small>';
+      $('budget').innerHTML = r.avail > 0
+        ? '每位還有 <b>' + C.fmtBudget(r.budget) + '</b> 分 <span style="opacity:.7">（剩 ' + r.R + ' 位）</span>'
+        : '已過離開時間 · 剩 <b>' + r.R + '</b> 位';
+      const w = C.warnText(r.warn);
+      $('warn').textContent = w; $('warn').classList.toggle('on', !!w);
+      $('idle').classList.toggle('on', r.idle);
+      if (r.taxi === 'call') { train.textContent = '叫車！' + C.fmtHM(r.deadline) + ' 要離開'; train.classList.add('alert'); }
+      else if (r.taxi === 'go') { train.textContent = '該走了！' + site.trainLabel + ' ' + site.train; train.classList.add('alert'); }
+      else { train.textContent = site.trainLabel + ' ' + site.train + ' · ' + C.fmtHM(r.deadline) + ' 要離開'; train.classList.remove('alert'); }
+    }
+    $('tbar').style.width = (r.timeFrac * 100).toFixed(1) + '%';
+    $('nbar').style.width = (r.countFrac * 100).toFixed(1) + '%';
+    const hist = load(LS.hist, []);
+    const h = document.querySelector('[data-k="hist"]');
+    if (h) h.textContent = '已歸檔 ' + hist.length + ' 場門診（只有按鍵時間與人數）。';
+  }
+
+  function buildSites() {
+    const t = document.getElementById('sites');
+    t.innerHTML = '<tr>' + FIELDS.map(f => '<th>' + f[1] + '</th>').join('') + '</tr>' + sites.map((s, i) =>
+      '<tr>' + FIELDS.map(f => '<td><input class="' + f[2] + '" data-i="' + i + '" data-f="' + f[0] + '" value="' + String(s[f[0]] ?? '').replace(/"/g, '&quot;') + '"></td>').join('') + '</tr>').join('');
+    t.oninput = ev => {
+      const el = ev.target; if (!el.dataset.f) return;
+      const s = sites[+el.dataset.i], f = FIELDS.find(x => x[0] === el.dataset.f);
+      s[f[0]] = f[2] === 'n' ? (el.value === '' ? '' : +el.value) : el.value;
+      save(LS.sites, sites); render();
+    };
+  }
+
+  // ---------- 按鍵（主頁與小視窗共用）----------
+  const KEYS = { ' ': 'done', 'Enter': 'done', 'Backspace': 'undo', 'z': 'undo', 'Z': 'undo', 'i': 'idle', 'I': 'idle',
+                 '+': 'nplus', '=': 'nplus', '-': 'nminus', '_': 'nminus' };
+  function bindDoc(doc) {
+    doc.addEventListener('keydown', ev => {
+      if (ev.target && /^(INPUT|TEXTAREA)$/.test(ev.target.tagName)) return;
+      const a = KEYS[ev.key]; if (!a || ev.repeat || ev.ctrlKey || ev.altKey || ev.metaKey) return;
+      ev.preventDefault(); act[a]();
+    });
+    doc.addEventListener('click', ev => {
+      const b = ev.target.closest && ev.target.closest('[data-act]'); if (!b) return;
+      ev.preventDefault(); act[b.dataset.act]();
+    });
+  }
+
+  // ---------- 置頂小視窗（Chrome／Edge 116+ 的 Document Picture-in-Picture）----------
+  let pipWin = null, ticker = null;
+  function startTicker(win) { if (ticker) ticker.w.clearInterval(ticker.id); ticker = { w: win, id: win.setInterval(render, 10000) }; }
+  async function openPip() {
+    if (pipWin) { pipWin.focus(); return; }
+    if (!('documentPictureInPicture' in window)) {
+      // 舊瀏覽器：開一般小視窗（不會置頂），兩邊靠 localStorage 同步
+      window.open(location.href.split('#')[0] + '#mini', 'clinicpace-mini', 'width=360,height=280');
+      return;
+    }
+    try {
+      pipWin = await documentPictureInPicture.requestWindow({ width: 340, height: 260 });
+    } catch (e) { toast('開不了置頂視窗：' + e.message); return; }
+    pipWin.document.title = '看診進度';
+    pipWin.document.documentElement.lang = 'zh-Hant';
+    pipWin.document.head.append(document.getElementById('pace-style').cloneNode(true));
+    pipWin.document.body.append(W);
+    bindDoc(pipWin.document);
+    document.body.classList.add('pip-open');
+    startTicker(pipWin);  // PiP 視窗是可見的，計時器不會被背景節流
+    pipWin.addEventListener('pagehide', () => {
+      document.getElementById('host').append(W);
+      document.body.classList.remove('pip-open');
+      pipWin = null; startTicker(window); render();
+    });
+    render();
+  }
+
+  // ---------- 啟動 ----------
+  if (location.hash === '#mini') { document.body.className = ''; document.querySelectorAll('.panel,.pip-host-note').forEach(e => e.remove()); }
+  bindDoc(document);
+  window.addEventListener('storage', ev => { if (ev.key === LS.day) { day = load(LS.day, day); render(); } if (ev.key === LS.sites) { sites = load(LS.sites, sites); render(); } });
+  loadDay();
+  if (document.getElementById('sites')) buildSites();
+  startTicker(window);
+  render();
+})();
+</script>
+</body>
+</html>
