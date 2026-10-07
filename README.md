@@ -16,4 +16,6 @@
 - 單一檔案 `clinic-pace.html`：`<script id="pace-core">` 是算法（無 DOM），`<script id="pace-ui">` 是畫面。
 - 算法測試：`node --test`（直接從 HTML 抽 `pace-core` 來跑；含 r1007-39 東基兩個範例）。
 - UI 冒煙測試＋截圖：`python tests/ui_check.py <輸出資料夾>`（Playwright 開有視窗的 Edge，會跳出 PiP 小視窗幾秒）。
-- 站點預設值（時刻來自復健科日曆 2026-10-07）在 `DEFAULT_SITES`；玉里、關山「交通」分鐘數是估計值，實測後在頁面上改。
+- 站點預設值在 `DEFAULT_SITES`：車次時刻來自復健科日曆（2026-10-07）；「最晚離開」是使用者給的實際值（東基 計程車 17:15、玉里 派車 17:30／自己走 18:00、關山 派車 12:20）。
+  ▲▼ 跟「最晚離開」比；有備案（玉里）時派車過了或會晚 ≥ 5 分就改跟備案比。站點存檔 key 是 `clinicpace.v2.sites`（舊 v1 設定不沿用）。
+- UI 冒煙測試加 `--screen` 才會螢幕實拍 PiP 周圍（會拍到其他視窗，診間電腦不要用）。
