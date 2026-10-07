@@ -1,8 +1,9 @@
 """UI 冒煙測試＋截圖：用 Playwright 開真的 Edge（有視窗，Document PiP 需要），假時鐘跑一場東基門診。
 
-用法：python tests/ui_check.py <截圖輸出資料夾> [--channel msedge|chrome]
+用法：python tests/ui_check.py <截圖輸出資料夾> [--channel msedge|chrome] [--screen]
 - 按鍵流程：開診、看完（空白鍵／按鈕）、撤銷、空檔、總人數 ±、連按防呆、重新整理不丟狀態、關診。
-- 截圖：正常（▲）、落後＋改票預警（▼ 反白）、置頂小視窗（PiP 頁面＋螢幕實拍）。
+- 截圖：只截小視窗本身——正常（▲）、落後＋改票預警（▼ 琥珀字＋細框，不反白）、玉里派車趕不上改自己走、置頂小視窗（PiP 頁面）。
+- --screen 才會另外螢幕實拍 PiP 周圍（會拍到桌面上其他視窗，診間電腦不要用）。
 """
 import argparse
 import datetime as dt
@@ -117,12 +118,12 @@ def no_open_flow(browser):
     ctx.close()
 
 
-def seeded(browser, now, sess, out_png, label, pip_png=None, screen_png=None):
+def seeded(browser, now, sess, out_png, label, pip_png=None, screen_png=None, site="tch"):
     ctx = browser.new_context(no_viewport=True)
     page = ctx.new_page()
     page.clock.set_fixed_time(now)
     page.goto(URL)
-    day = {"date": DAY.isoformat(), "current": "tch", "sessions": {"tch": sess}}
+    day = {"date": DAY.isoformat(), "current": site, "sessions": {site: sess}}
     page.evaluate("d => localStorage.setItem('clinicpace.v1.day', JSON.stringify(d))", day)
     page.reload()
     page.locator("#w").screenshot(path=str(out_png))
@@ -130,6 +131,8 @@ def seeded(browser, now, sess, out_png, label, pip_png=None, screen_png=None):
           f"warn={text(page, 'warn')!r} train={text(page, 'train')!r} behind={'behind' in page.get_attribute('#w', 'class')}")
     res = {k: text(page, k) for k in ("slack", "budget", "warn", "train")}
     res["behind"] = "behind" in page.get_attribute("#w", "class")
+    res["style"] = page.evaluate("""() => { const w = document.getElementById('w'), cs = getComputedStyle(w);
+        return { bg: cs.backgroundColor, border: cs.borderTopColor, slack: getComputedStyle(w.querySelector('.w-slack')).color }; }""")
     if pip_png:
         with ctx.expect_page() as pinfo:
             page.click('.panel button[data-act="pip"]')
@@ -157,32 +160,45 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
     ap.add_argument("--channel", default="msedge")
+    ap.add_argument("--screen", action="store_true")
     a = ap.parse_args()
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     MIN = 60000
 
-    def sess(n_done, end, gap):
+    def sess(n_done, end, gap, start=at(14, 0), N=25, head_gap=9):
         tail = [ms(end) - (5 - i) * gap * MIN for i in range(6)]
-        head = [ms(at(14, 0)) + (i + 1) * 9 * MIN for i in range(n_done - 6)]
-        return {"N": 25, "openAt": ms(at(14, 0)), "closedAt": None,
+        head = [ms(start) + (i + 1) * head_gap * MIN for i in range(n_done - 6)]
+        return {"N": N, "openAt": ms(start), "closedAt": None,
                 "events": [{"t": t, "type": "done"} for t in head + tail]}
 
     with sync_playwright() as p:
         browser = p.chromium.launch(channel=a.channel, headless=False)
         flow(browser)
         no_open_flow(browser)
-        normal = seeded(browser, at(15, 30), sess(10, at(15, 30), 7), out / "01-normal.png", "正常 15:30",
-                        pip_png=out / "03-pip-window.png", screen_png=out / "04-pip-on-screen.png")
+        # 東基 15:30 已看 10 位、最近 5 間隔 6 分：剩 15 × 6 → 17:00，比 17:15 早 15 分
+        normal = seeded(browser, at(15, 30), sess(10, at(15, 30), 6), out / "01-normal.png", "正常 15:30",
+                        pip_png=out / "03-pip-window.png",
+                        screen_png=(out / "04-pip-on-screen.png") if a.screen else None)
         behind = seeded(browser, at(16, 0), sess(12, at(16, 0), 8), out / "02-behind-warn.png", "落後 16:00",
                         pip_png=out / "05-pip-behind.png")
+        # 玉里 16:15 已看 20/30、最近 8 分：17:35 看完 → 派車 17:30 趕不上，改跟自己走 18:00 比
+        yuli = seeded(browser, at(16, 15), sess(20, at(16, 15), 8, start=at(13, 0), N=30, head_gap=7),
+                      out / "06-yuli-fallback.png", "玉里 16:15", site="yuli")
         browser.close()
 
-    check(normal["slack"].startswith("▲ +10") and not normal["behind"], "正常狀態 ▲ +10、不反白：" + normal["slack"])
-    check(behind["slack"].startswith("▼ −19") and behind["behind"], "落後狀態 ▼ −19 且反白：" + behind["slack"])
-    check("6.5" in behind["budget"], "落後時每位 6.5 分：" + behind["budget"])
+    dark = lambda rgb: sum(int(x) for x in rgb[rgb.index("(") + 1:rgb.index(")")].split(",")[:3]) < 3 * 60
+    check(normal["slack"].startswith("▲ +15") and not normal["behind"], "正常狀態 ▲ +15：" + normal["slack"])
+    check("計程車 17:15 離開" in normal["train"], "東基下排顯示計程車 17:15 離開：" + normal["train"])
+    check(behind["slack"].startswith("▼ −29") and behind["behind"], "落後狀態 ▼ −29：" + behind["slack"])
+    check(dark(normal["style"]["bg"]) and dark(behind["style"]["bg"]), f"正常／落後都是暗底（不反白）：{normal['style']['bg']} / {behind['style']['bg']}")
+    check(behind["style"]["slack"] != normal["style"]["slack"] and behind["style"]["border"] != normal["style"]["border"],
+          f"落後時大字顏色與外框不同：{normal['style']} → {behind['style']}")
+    check("5.8" in behind["budget"], "落後時每位 5.8 分：" + behind["budget"])
     check(behind["warn"] == "照速度趕不上 441 → 現在改 445（18:35）", "改票預警文字：" + behind["warn"])
     check(normal["warn"] == "", "正常時沒有預警")
+    check(yuli["slack"].startswith("▲ +25") and yuli["train"].startswith("派車趕不上 → 自己走 18:00 離開"),
+          f"玉里派車趕不上改跟自己走比：{yuli['slack']} / {yuli['train']}")
     check(normal.get("pip_has_widget") and behind.get("pip_has_widget"), "置頂小視窗裡有看診進度")
     check(normal.get("widget_back"), "關掉置頂視窗後回到主頁")
     print("pip geometry:", normal.get("pip_geom"))

@@ -11,8 +11,9 @@
 -->
 <style id="pace-style">
   :root {
-    --bg: #14213d; --fg: #ffffff; --dim: #b8c2d9; --line: #33476e;
-    --btn: #22345c; --btn-fg: #ffffff; --accent: #4da3ff; --warn: #ff9f1c;
+    /* 低調暗色：炭灰底、灰白字，強調色只用霧藍與琥珀，不用大面積亮色 */
+    --bg: #17191e; --fg: #d6d9de; --dim: #868c96; --line: #2c3038;
+    --btn: #22252b; --btn-fg: #c9cdd3; --accent: #6f8fb3; --warn: #d4a055; --panel: #1c1f25; --input: #121418;
     font-family: "Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans TC", "PingFang TC", sans-serif;
   }
   * { box-sizing: border-box; }
@@ -25,7 +26,8 @@
   .w { width: 100%; height: 100%; display: flex; flex-direction: column; padding: 6px 8px; gap: clamp(2px, 1.4cqh, 8px);
        background: var(--bg); color: var(--fg); user-select: none; container-type: size; overflow: hidden; }
   .w > * { flex-shrink: 0; }
-  body.main .w { width: 340px; height: 265px; border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.45); }
+  body.main .w { width: 340px; height: 280px; border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.45); }
+  .w { border: 2px solid transparent; }
   .w-top { display: flex; justify-content: space-between; align-items: baseline; font-size: clamp(12px, min(6.5cqw, 8.5cqh), 30px); }
   .w-count b { font-size: 1.25em; }
   .w-clock { color: var(--dim); font-variant-numeric: tabular-nums; }
@@ -35,13 +37,13 @@
   .w-budget { text-align: center; font-size: clamp(12px, min(6cqw, 8cqh), 32px); }
   .w-budget b { font-size: 1.3em; font-variant-numeric: tabular-nums; }
   .w-train { text-align: center; color: var(--dim); font-size: clamp(11px, min(4.8cqw, 6.5cqh), 22px); }
-  .w-train.alert { color: var(--bg); background: var(--warn); border-radius: 6px; font-weight: 700; animation: blink 1s steps(2) infinite; }
+  .w-train.alert { color: var(--warn); border: 1px solid var(--warn); border-radius: 6px; font-weight: 700; animation: blink 1.6s ease-in-out infinite; }
   .w-bars { display: grid; grid-template-columns: 2.2em 1fr; gap: 2px 6px; align-items: center; font-size: clamp(9px, min(3.6cqw, 4.8cqh), 15px); color: var(--dim); line-height: 1; }
   .bar { height: clamp(4px, 2.4cqh, 10px); background: var(--line); border-radius: 4px; overflow: hidden; }
   .bar i { display: block; height: 100%; background: var(--accent); }
   .bar.time i { background: var(--dim); }
   .w-warn { display: none; text-align: center; font-weight: 700; padding: 0 4px; border-radius: 6px;
-            background: var(--warn); color: #000; font-size: clamp(11px, min(4.8cqw, 6.5cqh), 22px); }
+            border: 1px dashed var(--warn); color: var(--warn); font-size: clamp(11px, min(4.8cqw, 6.5cqh), 22px); }
   .w-warn.on { display: block; }
   .w-warn.on ~ .w-train:not(.alert) { display: none; }
   .w-badge { display: none; padding: 0 6px; border: 1px dashed var(--fg); border-radius: 6px; font-weight: 700; }
@@ -49,29 +51,29 @@
   .w-site:has(~ .w-badge.on) { display: none; }
   .w-btns { margin-top: auto; flex-shrink: 0; display: grid; grid-template-columns: 3fr 1fr 1fr 1fr 1fr; gap: 4px; }
   .w-btns button { padding: 0; height: clamp(24px, 13cqh, 64px); font-size: clamp(11px, min(5cqw, 7cqh), 24px); }
-  .w-btns .done { font-weight: 800; background: var(--accent); color: #000; border-color: var(--accent); font-size: clamp(13px, min(6.5cqw, 8.5cqh), 32px); }
+  .w-btns .done { font-weight: 800; background: #262c35; color: var(--fg); border-color: var(--accent); font-size: clamp(13px, min(6.5cqw, 8.5cqh), 32px); }
   .w-btns2 { display: flex; gap: 4px; flex-shrink: 0; }
   .w-btns2 button { flex: 1; }
   .w-btns2 button { font-size: clamp(10px, min(4cqw, 5.2cqh), 18px); padding: 0; height: clamp(18px, 8cqh, 40px); }
   .w-toast { position: fixed; left: 50%; top: 6px; transform: translateX(-50%); background: #000; color: #fff; padding: 2px 10px;
              border-radius: 6px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
   .w-toast.on { opacity: .9; }
-  @keyframes blink { 50% { opacity: .55; } }
+  @keyframes blink { 50% { opacity: .5; } }
 
-  /* 落後：整個視窗反白（白底黑字）。靠亮度與形狀分辨，不靠紅綠 */
-  .w.behind { --bg: #ffffff; --fg: #000000; --dim: #333333; --line: #bbbbbb; --btn: #eeeeee; --btn-fg: #000000; --accent: #1f5fbf; }
-  .w.behind .w-btns .done { color: #fff; }
+  /* 落後：不反白，只有大字變琥珀色＋視窗細框＋▼。靠符號與亮度分辨，不靠紅綠 */
+  .w.behind { border-color: var(--warn); }
+  .w.behind .w-slack { color: var(--warn); }
   .w.closed .w-slack { font-size: clamp(20px, 10cqw, 60px); }
 
   /* ---------- 主頁 ---------- */
-  .panel { width: min(720px, 100%); background: #1b2a4a; border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; }
+  .panel { width: min(720px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; }
   .panel h2 { margin: 0 0 8px; font-size: 18px; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .big { font-size: 18px; padding: 8px 16px; background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
+  .big { font-size: 18px; padding: 8px 16px; background: #262c35; color: var(--fg); border-color: var(--accent); font-weight: 700; }
   .note { color: var(--dim); font-size: 14px; line-height: 1.6; }
   table.sites { border-collapse: collapse; width: 100%; font-size: 14px; }
   table.sites th, table.sites td { border-bottom: 1px solid var(--line); padding: 4px; text-align: left; }
-  table.sites input { width: 100%; font: inherit; background: #0f1a30; color: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
+  table.sites input { width: 100%; font: inherit; background: var(--input); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
   table.sites input.n { width: 4.5em; }
   kbd { border: 1px solid var(--dim); border-radius: 4px; padding: 0 4px; font-size: 13px; }
   .pip-host-note { display: none; color: var(--dim); }
@@ -115,7 +117,7 @@
     看完一位按 <b>✓ 看完</b>（小視窗在前面時也可按 <kbd>空白鍵</kbd> 或 <kbd>Enter</kbd>）。按錯按 <b>↶</b>（<kbd>Backspace</kbd>）。<br>
     病人還沒到、沒人候診就按 <b>空</b>（<kbd>I</kbd>）：從這一下到下一次「看完」的時間不算進速度。<br>
     總人數用 <b>−／＋</b> 調（<kbd>-</kbd>／<kbd>+</kbd>），最後報到截止後照實際人數修正一次。<br>
-    大字：<b>▲ +9</b>＝照目前速度會比離開時間早 9 分；<b>● </b>＝差不多；<b>▼ −19</b>＝會晚 19 分（整個視窗反白）。<br>
+    大字：<b>▲ +9</b>＝照目前速度會比離開時間早 9 分；<b>● </b>＝差不多；<b>▼ −19</b>＝會晚 19 分（大字變琥珀色、視窗加細框）。<br>
     「每位 x 分」＝剩下的病人平均每位還能用幾分鐘。資料只存在這台電腦的瀏覽器裡，關掉重開會接著算；隔天自動歸檔。
   </p>
 </div>
@@ -123,7 +125,9 @@
 <div class="panel">
   <h2>站點設定（改完自動存）</h2>
   <table class="sites" id="sites"></table>
-  <p class="note">離開診間＝車次時間 − 交通 − 進站。叫車提示在離開前「叫車提前」分鐘亮起（0＝不提示）。備選車次格式：<code>445 18:35, 447 20:00</code>。
+  <p class="note">「最晚離開」＝最晚要離開診間的時間，▲▼ 就是跟它比。有「備案離開」（玉里：派車趕不上就自己走）時，
+    先以派車為目標；派車時間過了、或照速度會晚 5 分以上，就改跟備案比（下排顯示「派車趕不上 → 自己走 18:00 離開」）。
+    改票預警看最後一個離開時間。離開前「提醒提前」分鐘亮起提示：離開方式是「計程車」顯示「叫車！」，其他顯示「準備走！」（0＝不提示）。備選車次格式：<code>445 18:35, 447 20:00</code>。
     速度預設＝還沒累積到 5 位時拿來補的每位分鐘數。</p>
   <div class="row"><button data-act="resetSites">恢復預設站點</button><button data-act="export">匯出紀錄（JSON）</button><button data-act="clearToday">清掉今天這個站點</button></div>
   <p class="note" data-k="hist"></p>
@@ -187,18 +191,45 @@
     return w * ewma(xs, prior) + (1 - w) * prior;
   }
 
+  // 最晚離開診間的時間（直接設定）：主要＝leave（例：玉里派車 17:30），備案＝leave2（例：自己走 18:00）。
+  // 沒填 leave 時退回舊算法：車次時間 − 交通 − 進站。
+  function leaves(site) {
+    const out = [];
+    const a = hm(site.leave), b = hm(site.leave2);
+    if (!isNaN(a)) out.push({ label: site.leaveLabel || '離開', min: a });
+    else out.push({ label: site.leaveLabel || '離開', min: hm(site.train) - (+site.travel || 0) - (+site.buffer || 0) });
+    if (!isNaN(b) && b > out[0].min) out.push({ label: site.leave2Label || '備案', min: b });
+    return out;
+  }
+  // 收工時算「趕上哪一個」：第一個還沒過的離開時間，都過了就最後一個
+  function targetAt(site, nowMs, tMs) {
+    const opts = leaves(site);
+    return opts.find(o => atDay(nowMs, o.min) >= tMs) || opts[opts.length - 1];
+  }
+
   function compute(site, sess, nowMs) {
     const prior = +site.prior || 8;
     const n = sess.events.filter(e => e.type === 'done').length;
     const N = Math.max(sess.N, n);
     const R = N - n;
     const train = atDay(nowMs, hm(site.train));
-    const deadline = train - ((+site.travel || 0) + (+site.buffer || 0)) * MIN;
+    const p = pace(sess, prior);
+    const finishEst = nowMs + R * p * MIN;
+    // 目標：先以主要離開時間（派車）為準；已過、或照速度會晚 ≥ BAND 分（▼）→ 改用下一個（自己走）
+    const opts = leaves(site);
+    let ti = 0;
+    while (ti < opts.length - 1) {
+      const d = atDay(nowMs, opts[ti].min);
+      if (nowMs >= d || (R > 0 && (d - finishEst) / MIN <= -BAND)) ti++; else break;
+    }
+    const target = opts[ti];
+    const fallback = ti > 0 ? opts[0] : null;   // 趕不上的那一個（顯示「派車趕不上」）
+    const next = opts[ti + 1] || null;           // 還有備案（顯示「自己走 18:00」）
+    const deadline = atDay(nowMs, target.min);
+    const lastDeadline = atDay(nowMs, opts[opts.length - 1].min);
     const callTaxi = (+site.taxiLead > 0) ? deadline - (+site.taxiLead) * MIN : null;
     const start = sess.openAt != null ? sess.openAt : atDay(nowMs, hm(site.start));
-    const p = pace(sess, prior);
     const avail = (deadline - nowMs) / MIN;
-    const finishEst = nowMs + R * p * MIN;
     const slack = (deadline - finishEst) / MIN;
     const budget = R > 0 ? avail / R : null;
     const last = sess.events[sess.events.length - 1];
@@ -207,9 +238,10 @@
     let level = 'on';
     if (slack >= BAND) level = 'ahead'; else if (slack <= -BAND) level = 'behind';
 
+    // 改票預警看「最後一個離開時間」：派車趕不上還能自己走，不算趕不上車
     let warn = null;
-    if (R > 0 && slack < WARN_SLACK && nowMs < train - WARN_BEFORE * MIN) {
-      const lead = ((+site.travel || 0) + (+site.buffer || 0)) * MIN;
+    if (R > 0 && (lastDeadline - finishEst) / MIN < WARN_SLACK && nowMs < train - WARN_BEFORE * MIN) {
+      const lead = train - lastDeadline;   // 離開診間到開車要留的時間（例：東基 17:15 → 17:46＝31 分）
       const alts = parseAlts(site.alts).filter(a => atDay(nowMs, a.min) > train);
       const ok = alts.find(a => atDay(nowMs, a.min) - lead >= finishEst);
       warn = { train: site.trainLabel, alt: ok || null, none: alts.length > 0 && !ok, last: alts[alts.length - 1] || null };
@@ -224,7 +256,7 @@
     const span = deadline - start;
     return {
       n, N, R, prior, pace: p, avail, budget, finishEst, slack, level, warn, taxi, idle,
-      deadline, callTaxi, train, start,
+      deadline, callTaxi, train, start, target, fallback, next,
       timeFrac: span > 0 ? Math.min(1, Math.max(0, (nowMs - start) / span)) : 0,
       countFrac: N > 0 ? n / N : 0,
       validIntervals: intervals(sess).length,
@@ -248,25 +280,34 @@
     return `照速度趕不上 ${w.train} → 現在改票或想備案`;
   }
 
-  root.PaceCore = { hm, atDay, parseAlts, intervals, ewma, pace, compute, fmtSlack, fmtBudget, fmtHM, warnText, MIN };
+  root.PaceCore = { hm, atDay, parseAlts, leaves, targetAt, intervals, ewma, pace, compute, fmtSlack, fmtBudget, fmtHM, warnText, MIN };
 })(typeof globalThis !== 'undefined' ? globalThis : window);
 </script>
 
 <script id="pace-ui">
 (function () {
   const C = window.PaceCore;
-  const LS = { sites: 'clinicpace.v1.sites', day: 'clinicpace.v1.day', hist: 'clinicpace.v1.history' };
-  // 預設站點：時刻來自復健科日曆（2026-10-07 查）。交通分鐘數玉里／關山是估計值，請實測後改。
+  // sites 換 v2：站點欄位改成「最晚離開時間」，舊的存檔不沿用（改用新預設）
+  const LS = { sites: 'clinicpace.v2.sites', day: 'clinicpace.v1.day', hist: 'clinicpace.v1.history' };
+  // 預設站點：車次時刻來自復健科日曆（2026-10-07 查）；最晚離開時間是使用者 2026-10-07 給的實際值：
+  // 東基 自己叫計程車（車程 12 分＋叫車＋買飯）最晚 17:15；玉里 派車 17:30，趕不上就自己走、最晚 18:00（到站 15 分）；關山 派車 12:20。
   const DEFAULT_SITES = [
-    { id: 'tch',  name: '東基', weekday: 3, start: '14:00', trainLabel: '441', train: '17:46', travel: 15, buffer: 6, taxiLead: 5, N: 25, prior: 8, alts: '445 18:35, 447 20:00' },
-    { id: 'yuli', name: '玉里', weekday: 1, start: '13:00', trainLabel: '441', train: '18:29', travel: 5,  buffer: 6, taxiLead: 5, N: 30, prior: 8, alts: '445 19:29, 447 20:53' },
-    { id: 'gs',   name: '關山', weekday: 3, start: '08:30', trainLabel: '472', train: '12:42', travel: 5,  buffer: 6, taxiLead: 5, N: 23, prior: 8, alts: '' },
+    { id: 'tch',  name: '東基', weekday: 3, start: '14:00', trainLabel: '441', train: '17:46', leaveLabel: '計程車', leave: '17:15', leave2Label: '', leave2: '', taxiLead: 5, N: 25, prior: 8, alts: '445 18:35, 447 20:00' },
+    { id: 'yuli', name: '玉里', weekday: 1, start: '13:00', trainLabel: '441', train: '18:29', leaveLabel: '派車', leave: '17:30', leave2Label: '自己走', leave2: '18:00', taxiLead: 5, N: 30, prior: 8, alts: '445 19:29, 447 20:53' },
+    { id: 'gs',   name: '關山', weekday: 3, start: '08:30', trainLabel: '472', train: '12:42', leaveLabel: '派車', leave: '12:20', leave2Label: '', leave2: '', taxiLead: 5, N: 23, prior: 8, alts: '' },
   ];
   const FIELDS = [
     ['name', '站點', 'text'], ['start', '開診', 'text'], ['trainLabel', '車次', 'text'], ['train', '開車', 'text'],
-    ['travel', '交通(分)', 'n'], ['buffer', '進站(分)', 'n'], ['taxiLead', '叫車提前', 'n'], ['N', '預設人數', 'n'],
+    ['leaveLabel', '離開方式', 'text'], ['leave', '最晚離開', 'text'], ['leave2Label', '備案方式', 'text'], ['leave2', '備案離開', 'text'],
+    ['taxiLead', '提醒提前', 'n'], ['N', '預設人數', 'n'],
     ['prior', '速度預設', 'n'], ['alts', '備選車次', 'text'], ['weekday', '星期(0日)', 'n'],
   ];
+  // 「派車 17:30（自己走 18:00）」
+  function leaveText(r) {
+    const t = r.target.label + ' ' + C.fmtHM(r.deadline) + ' 離開';
+    return r.next ? t + '（' + r.next.label + ' ' + hmText(r.next.min) + '）' : t;
+  }
+  function hmText(m) { return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
   const DEBOUNCE_MS = 2000;  // 2 秒內連按兩下「看完」只算一次（防手滑雙擊）
 
   function load(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } }
@@ -383,22 +424,22 @@
     if (s.closedAt != null) {
       W.classList.add('closed');
       const xs = C.intervals(s), avg = xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
-      const early = Math.round((r.deadline - s.closedAt) / C.MIN);
+      const tg = C.targetAt(site, now, s.closedAt), early = Math.round((C.atDay(now, tg.min) - s.closedAt) / C.MIN);
       $('slack').innerHTML = '收工 ' + C.fmtHM(s.closedAt);
       $('budget').innerHTML = '看了 <b>' + r.n + '</b> 位' + (avg ? '，平均 <b>' + C.fmtBudget(avg) + '</b> 分' : '');
-      train.textContent = (early >= 0 ? '比離開時間早 ' + early + ' 分' : '比離開時間晚 ' + (-early) + ' 分') + ' · ' + site.trainLabel + ' ' + site.train;
+      train.textContent = (early >= 0 ? '比' + tg.label + '早 ' + early + ' 分' : '比' + tg.label + '晚 ' + (-early) + ' 分') + ' · ' + site.trainLabel + ' ' + site.train;
       train.classList.remove('alert');
       $('warn').classList.remove('on'); $('idle').classList.remove('on');
     } else if (s.openAt == null && r.n === 0) {
       $('slack').innerHTML = '<small>' + site.name + ' ' + site.start + ' 開診</small>';
       $('budget').innerHTML = '每位 <b>' + C.fmtBudget(r.budget) + '</b> 分';
-      train.textContent = site.trainLabel + ' ' + site.train + ' · ' + C.fmtHM(r.deadline) + ' 要離開';
+      train.textContent = leaveText(r) + ' · ' + site.trainLabel + ' ' + site.train;
       train.classList.remove('alert');
       $('warn').classList.remove('on'); $('idle').classList.remove('on');
     } else if (r.R === 0) {
       $('slack').innerHTML = '全部看完';
       $('budget').innerHTML = '可以按「關診」';
-      train.textContent = site.trainLabel + ' ' + site.train + ' · ' + C.fmtHM(r.deadline) + ' 要離開';
+      train.textContent = leaveText(r) + ' · ' + site.trainLabel + ' ' + site.train;
       train.classList.remove('alert');
       $('warn').classList.remove('on'); $('idle').classList.toggle('on', false);
     } else {
@@ -410,9 +451,12 @@
       const w = C.warnText(r.warn);
       $('warn').textContent = w; $('warn').classList.toggle('on', !!w);
       $('idle').classList.toggle('on', r.idle);
-      if (r.taxi === 'call') { train.textContent = '叫車！' + C.fmtHM(r.deadline) + ' 要離開'; train.classList.add('alert'); }
+      // 計程車要自己叫 → 「叫車！」；派車／自己走 → 「準備走！」
+      const call = r.target.label === '計程車' ? '叫車！' : '準備走！';
+      if (r.taxi === 'call') { train.textContent = call + r.target.label + ' ' + C.fmtHM(r.deadline) + ' 離開'; train.classList.add('alert'); }
       else if (r.taxi === 'go') { train.textContent = '該走了！' + site.trainLabel + ' ' + site.train; train.classList.add('alert'); }
-      else { train.textContent = site.trainLabel + ' ' + site.train + ' · ' + C.fmtHM(r.deadline) + ' 要離開'; train.classList.remove('alert'); }
+      else if (r.fallback) { train.textContent = r.fallback.label + '趕不上 → ' + leaveText(r); train.classList.remove('alert'); }
+      else { train.textContent = leaveText(r) + ' · ' + site.trainLabel + ' ' + site.train; train.classList.remove('alert'); }
     }
     $('tbar').style.width = (r.timeFrac * 100).toFixed(1) + '%';
     $('nbar').style.width = (r.countFrac * 100).toFixed(1) + '%';
